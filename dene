@@ -1,0 +1,288 @@
+import re
+from enum import Enum
+import json
+import os
+
+class CitationStyle(Enum):
+    APA = "APA"
+    MLA = "MLA"
+    IEEE = "IEEE"
+
+class ReferenceManager:
+    def __init__(self):
+        self.references = []
+        self.style = CitationStyle.IEEE
+        self.text = ""
+        self.citation_map = {}  # Atıf numaralarını eşleştirmek için
+        
+    def add_reference(self, author, title, year, journal=None, publisher=None, url=None, doi=None):
+        """Yeni kaynak ekler ve kaynak ID'sini döndürür"""
+        ref = {
+            'id': len(self.references) + 1,
+            'author': author,
+            'title': title,
+            'year': year,
+            'journal': journal,
+            'publisher': publisher,
+            'url': url,
+            'doi': doi
+        }
+        self.references.append(ref)
+        return ref['id']
+    
+    def insert_citation(self, position=None, ref_id=None):
+        """Metne atıf ekler"""
+        if not ref_id and self.references:
+            ref_id = self.references[-1]['id']  # En son eklenen kaynak
+            
+        if ref_id:
+            citation = f"[{ref_id}]"
+            if position is not None:
+                self.text = self.text[:position] + citation + self.text[position:]
+            else:
+                self.text += citation
+            return citation
+        return ""
+    
+    def generate_bibliography(self):
+        """Kaynakça oluşturur"""
+        if not self.references:
+            return ""
+            
+        bibliography = []
+        for ref in self.references:
+            if self.style == CitationStyle.IEEE:
+                entry = self._format_ieee(ref)
+            elif self.style == CitationStyle.APA:
+                entry = self._format_apa(ref)
+            elif self.style == CitationStyle.MLA:
+                entry = self._format_mla(ref)
+            bibliography.append(entry)
+        
+        return "\n".join(bibliography)
+    
+    def _format_ieee(self, ref):
+        """IEEE formatında kaynak oluşturur"""
+        authors = ref['author'].split(' and ') if ' and ' in ref['author'] else [ref['author']]
+        formatted_authors = []
+        for author in authors:
+            parts = author.split(', ')
+            if len(parts) > 1:
+                formatted_authors.append(f"{parts[0]}, {parts[1][0]}.")
+            else:
+                formatted_authors.append(author)
+        
+        author_str = ', '.join(formatted_authors)
+        
+        entry = f"[{ref['id']}] {author_str}, \"{ref['title']}\", "
+        if ref['journal']:
+            entry += f"{ref['journal']}, "
+        if ref['publisher']:
+            entry += f"{ref['publisher']}, "
+        entry += f"{ref['year']}."
+        
+        if ref['doi']:
+            entry += f" doi: {ref['doi']}"
+        elif ref['url']:
+            entry += f" Available: {ref['url']}"
+            
+        return entry
+    
+    def _format_apa(self, ref):
+        """APA formatında kaynak oluşturur"""
+        authors = ref['author'].split(' and ') if ' and ' in ref['author'] else [ref['author']]
+        formatted_authors = []
+        for author in authors:
+            parts = author.split(', ')
+            if len(parts) > 1:
+                formatted_authors.append(f"{parts[1]} {parts[0][0]}.")
+            else:
+                formatted_authors.append(author)
+        
+        if len(formatted_authors) > 1:
+            author_str = ', '.join(formatted_authors[:-1]) + ', & ' + formatted_authors[-1]
+        else:
+            author_str = formatted_authors[0]
+        
+        entry = f"{author_str} ({ref['year']}). {ref['title']}. "
+        if ref['journal']:
+            entry += f"{ref['journal']}"
+            if ref['doi']:
+                entry += f". https://doi.org/{ref['doi']}"
+            elif ref['url']:
+                entry += f". Retrieved from {ref['url']}"
+        elif ref['publisher']:
+            entry += f"{ref['publisher']}."
+        
+        return entry
+    
+    def _format_mla(self, ref):
+        """MLA formatında kaynak oluşturur"""
+        authors = ref['author'].split(' and ') if ' and ' in ref['author'] else [ref['author']]
+        formatted_authors = []
+        for author in authors:
+            parts = author.split(', ')
+            if len(parts) > 1:
+                formatted_authors.append(f"{parts[0]}, {parts[1]}")
+            else:
+                formatted_authors.append(author)
+        
+        if len(formatted_authors) > 2:
+            author_str = ', '.join(formatted_authors[:-1]) + ', and ' + formatted_authors[-1]
+        elif len(formatted_authors) == 2:
+            author_str = ' and '.join(formatted_authors)
+        else:
+            author_str = formatted_authors[0]
+        
+        entry = f"{author_str}. \"{ref['title']}.\" "
+        if ref['journal']:
+            entry += f"{ref['journal']}, "
+        elif ref['publisher']:
+            entry += f"{ref['publisher']}, "
+        entry += f"{ref['year']}."
+        
+        if ref['doi']:
+            entry += f" DOI: {ref['doi']}"
+        elif ref['url']:
+            entry += f" Web. <{ref['url']}>."
+        
+        return entry
+    
+    def load_text(self, file_path):
+        """Metin dosyasını yükler"""
+        if os.path.exists(file_path):
+            with open(file_path, 'r', encoding='utf-8') as file:
+                self.text = file.read()
+    
+    def save_project(self, file_path):
+        """Projeyi kaydeder"""
+        data = {
+            'text': self.text,
+            'references': self.references,
+            'style': self.style.value
+        }
+        with open(file_path, 'w', encoding='utf-8') as file:
+            json.dump(data, file, ensure_ascii=False, indent=2)
+    
+    def load_project(self, file_path):
+        """Projeyi yükler"""
+        if os.path.exists(file_path):
+            with open(file_path, 'r', encoding='utf-8') as file:
+                data = json.load(file)
+                self.text = data['text']
+                self.references = data['references']
+                self.style = CitationStyle(data['style'])
+    
+    def export_document(self, output_path):
+        """Tam dokümanı kaynakçayla birlikte kaydeder"""
+        with open(output_path, 'w', encoding='utf-8') as file:
+            file.write(self.text)
+            if self.references:
+                file.write("\n\n## References\n")
+                file.write(self.generate_bibliography())
+
+def main():
+    manager = ReferenceManager()
+    
+    while True:
+        print("\n--- Reference Manager ---")
+        print("1. Load text file")
+        print("2. Add reference")
+        print("3. Insert citation")
+        print("4. Change citation style")
+        print("5. Show bibliography")
+        print("6. Save project")
+        print("7. Load project")
+        print("8. Export document")
+        print("9. Exit")
+        
+        choice = input("Select an option: ")
+        
+        if choice == "1":
+            file_path = input("Enter text file path: ")
+            manager.load_text(file_path)
+            print(f"Loaded text with {len(manager.text)} characters.")
+            
+        elif choice == "2":
+            print("\nAdd New Reference:")
+            author = input("Author(s) (use 'and' between authors): ")
+            title = input("Title: ")
+            year = input("Year: ")
+            journal = input("Journal (optional): ")
+            publisher = input("Publisher (optional): ")
+            url = input("URL (optional): ")
+            doi = input("DOI (optional): ")
+            
+            ref_id = manager.add_reference(
+                author=author,
+                title=title,
+                year=year,
+                journal=journal if journal else None,
+                publisher=publisher if publisher else None,
+                url=url if url else None,
+                doi=doi if doi else None
+            )
+            print(f"Reference added with ID: {ref_id}")
+            
+        elif choice == "3":
+            if not manager.text:
+                print("Please load text first.")
+                continue
+                
+            print(f"\nCurrent text length: {len(manager.text)}")
+            position = input("Enter position to insert citation (leave empty for end): ")
+            ref_id = input("Enter reference ID (leave empty for last added): ")
+            
+            try:
+                pos = int(position) if position.strip() else None
+                rid = int(ref_id) if ref_id.strip() else None
+                citation = manager.insert_citation(position=pos, ref_id=rid)
+                print(f"Citation {citation} inserted.")
+            except ValueError:
+                print("Invalid position or reference ID.")
+                
+        elif choice == "4":
+            print("\nSelect citation style:")
+            print("1. APA")
+            print("2. MLA")
+            print("3. IEEE")
+            style_choice = input("Enter style number: ")
+            
+            if style_choice == "1":
+                manager.style = CitationStyle.APA
+            elif style_choice == "2":
+                manager.style = CitationStyle.MLA
+            elif style_choice == "3":
+                manager.style = CitationStyle.IEEE
+            else:
+                print("Invalid choice.")
+            print(f"Style changed to {manager.style.value}")
+            
+        elif choice == "5":
+            print("\nBibliography:")
+            print(manager.generate_bibliography())
+            
+        elif choice == "6":
+            file_path = input("Enter project file path to save: ")
+            manager.save_project(file_path)
+            print("Project saved.")
+            
+        elif choice == "7":
+            file_path = input("Enter project file path to load: ")
+            manager.load_project(file_path)
+            print("Project loaded.")
+            
+        elif choice == "8":
+            file_path = input("Enter output file path: ")
+            manager.export_document(file_path)
+            print("Document exported with references.")
+            
+        elif choice == "9":
+            print("Exiting...")
+            break
+            
+        else:
+            print("Invalid option, please try again.")
+
+if __name__ == "__main__":
+    main()
